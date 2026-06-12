@@ -78,22 +78,27 @@ pub fn solve(
     // Phase 2: Wont Separation — check and fix
     fix_wont_violations(constraints, &mut tables, &mut seated)?;
 
-    // Phase 3: Should Filling
+    // Phase 3: Seat with ≥2 Must/Should neighbors
     let unseated: Vec<GuestId> = all_guests.difference(&seated).copied().collect();
     for &guest in &unseated {
-        let best = score_tables_for_guest(guest, constraints, &tables);
-        if let Some((table_idx, seat_idx)) = best {
-            tables[table_idx].seats[seat_idx] = Some(guest);
-            seated.insert(guest);
+        if let Some(pos) = find_seat_min_adjacent(guest, constraints, &tables, 2, &[LinkType::Must, LinkType::Should]) {
+            seat_guest(guest, pos, &mut tables, &mut seated);
         }
     }
 
+    // Phase 4: Remaining — try ≥2 Must/Should/Could neighbors
     let remaining: Vec<GuestId> = all_guests.difference(&seated).copied().collect();
     for &guest in &remaining {
-        let best = find_any_free_seat(&tables);
-        if let Some((table_idx, seat_idx)) = best {
-            tables[table_idx].seats[seat_idx] = Some(guest);
-            seated.insert(guest);
+        if let Some(pos) = find_seat_min_adjacent(guest, constraints, &tables, 2, &[LinkType::Must, LinkType::Should, LinkType::Could]) {
+            seat_guest(guest, pos, &mut tables, &mut seated);
+        }
+    }
+
+    // Phase 5: Best effort for anyone still left
+    let remaining: Vec<GuestId> = all_guests.difference(&seated).copied().collect();
+    for &guest in &remaining {
+        if let Some(pos) = find_best_available_seat(guest, constraints, &tables) {
+            seat_guest(guest, pos, &mut tables, &mut seated);
         }
     }
 
@@ -201,42 +206,66 @@ fn fix_wont_violations(
     Ok(())
 }
 
-fn score_tables_for_guest(
+fn seat_guest(guest: GuestId, pos: (usize, usize), tables: &mut [Table], seated: &mut HashSet<GuestId>) {
+    tables[pos.0].seats[pos.1] = Some(guest);
+    seated.insert(guest);
+}
+
+fn find_seat_min_adjacent(
+    guest: GuestId,
+    constraints: &ConstraintGraph,
+    tables: &[Table],
+    min_strong: usize,
+    kinds: &[LinkType],
+) -> Option<(usize, usize)> {
+    let strong_set: HashSet<GuestId> = constraints
+        .neighbors(guest)
+        .into_iter()
+        .filter(|(_, kind)| kinds.contains(kind))
+        .map(|(id, _)| id)
+        .collect();
+
+    if strong_set.len() < min_strong {
+        return None;
+    }
+
+    let mut best: Option<(usize, usize, usize)> = None;
+    for (ti, table) in tables.iter().enumerate() {
+        for &si in &table.free_seat_indices() {
+            let adjacent = table.neighbors(si);
+            let count = adjacent.iter().filter(|n| strong_set.contains(n)).count();
+            if count >= min_strong {
+                if best.map_or(true, |(_, _, s)| count > s) {
+                    best = Some((ti, si, count));
+                }
+            }
+        }
+    }
+    best.map(|(ti, si, _)| (ti, si))
+}
+
+fn find_best_available_seat(
     guest: GuestId,
     constraints: &ConstraintGraph,
     tables: &[Table],
 ) -> Option<(usize, usize)> {
-    let neighbors = constraints.neighbors(guest);
-    let pref_ids: HashSet<GuestId> = neighbors
-        .iter()
-        .filter(|(_, kind)| *kind == LinkType::Must || *kind == LinkType::Should)
-        .map(|(id, _)| *id)
+    let conn_set: HashSet<GuestId> = constraints
+        .neighbors(guest)
+        .into_iter()
+        .map(|(id, _)| id)
         .collect();
 
-    let mut best: Option<(usize, usize, i32)> = None; // (table_idx, seat_idx, score)
-
+    let mut best: Option<(usize, usize, usize)> = None;
     for (ti, table) in tables.iter().enumerate() {
         for &si in &table.free_seat_indices() {
             let adjacent = table.neighbors(si);
-            let score = adjacent.iter().filter(|n| pref_ids.contains(n)).count() as i32;
-            // prefer seats with some adjacency over none
-            let score = score * 100 + (if adjacent.is_empty() { 0 } else { 1 });
-            if best.map_or(true, |(_, _, s)| score > s) {
-                best = Some((ti, si, score));
+            let count = adjacent.iter().filter(|n| conn_set.contains(n)).count();
+            if best.map_or(true, |(_, _, s)| count > s) {
+                best = Some((ti, si, count));
             }
         }
     }
-
     best.map(|(ti, si, _)| (ti, si))
-}
-
-fn find_any_free_seat(tables: &[Table]) -> Option<(usize, usize)> {
-    for (ti, table) in tables.iter().enumerate() {
-        for &si in &table.free_seat_indices() {
-            return Some((ti, si));
-        }
-    }
-    None
 }
 
 fn find_guest(id: GuestId, tables: &[Table]) -> Option<(usize, usize)> {

@@ -172,7 +172,14 @@ impl AppUi {
                     .default_width(240.0)
                     .show(ctx, |ui| {
                         let name = guests.get(selected).map(|g| g.name.as_str()).unwrap_or("?");
-                        ui.heading(format!("Constraints for {}", name));
+                        ui.horizontal(|ui| {
+                            ui.heading(format!("Constraints for {}", name));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.small_button("✕").clicked() {
+                                    self.selected_guest = None;
+                                }
+                            });
+                        });
                         ui.separator();
 
                         Self::render_constraint_section(
@@ -316,7 +323,10 @@ impl AppUi {
         if !arrangement.is_feasible() {
             ui.colored_label(
                 egui::Color32::from_rgb(200, 160, 80),
-                format!("{} guest(s) could not be seated", arrangement.unseated.len()),
+                format!(
+                    "{} guest(s) could not be seated",
+                    arrangement.unseated.len()
+                ),
             );
             ui.label("Unseated:");
             for &id in &arrangement.unseated {
