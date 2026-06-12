@@ -2615,6 +2615,7 @@ name = "seat-planner"
 version = "0.1.0"
 dependencies = [
  "eframe",
+ "js-sys",
  "log",
  "serde",
  "serde_json",
