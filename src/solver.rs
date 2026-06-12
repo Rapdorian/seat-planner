@@ -78,19 +78,47 @@ pub fn solve(
     // Phase 2: Wont Separation — check and fix
     fix_wont_violations(constraints, &mut tables, &mut seated)?;
 
-    // Phase 3: Seat with ≥2 Must/Should neighbors
-    let unseated: Vec<GuestId> = all_guests.difference(&seated).copied().collect();
-    for &guest in &unseated {
-        if let Some(pos) = find_seat_min_adjacent(guest, constraints, &tables, 2, &[LinkType::Must, LinkType::Should]) {
-            seat_guest(guest, pos, &mut tables, &mut seated);
+    // Phase 3: Multi-round, seat with ≥2 Must/Should neighbors
+    // Sort by connection count so high-connection guests seed tables first,
+    // and repeat rounds so later-placed connections unlock more placements.
+    loop {
+        let unseated: Vec<GuestId> = all_guests.difference(&seated).copied().collect();
+        if unseated.is_empty() {
+            break;
+        }
+        let mut candidates = unseated;
+        candidates.sort_by(|a, b| count_connections(*b, constraints, &[LinkType::Must, LinkType::Should])
+            .cmp(&count_connections(*a, constraints, &[LinkType::Must, LinkType::Should])));
+        let mut placed = false;
+        for &guest in &candidates {
+            if let Some(pos) = find_seat_min_adjacent(guest, constraints, &tables, 2, &[LinkType::Must, LinkType::Should]) {
+                seat_guest(guest, pos, &mut tables, &mut seated);
+                placed = true;
+            }
+        }
+        if !placed {
+            break;
         }
     }
 
-    // Phase 4: Remaining — try ≥2 Must/Should/Could neighbors
-    let remaining: Vec<GuestId> = all_guests.difference(&seated).copied().collect();
-    for &guest in &remaining {
-        if let Some(pos) = find_seat_min_adjacent(guest, constraints, &tables, 2, &[LinkType::Must, LinkType::Should, LinkType::Could]) {
-            seat_guest(guest, pos, &mut tables, &mut seated);
+    // Phase 4: Multi-round, try ≥2 Must/Should/Could neighbors
+    loop {
+        let remaining: Vec<GuestId> = all_guests.difference(&seated).copied().collect();
+        if remaining.is_empty() {
+            break;
+        }
+        let mut candidates = remaining;
+        candidates.sort_by(|a, b| count_connections(*b, constraints, &[LinkType::Must, LinkType::Should, LinkType::Could])
+            .cmp(&count_connections(*a, constraints, &[LinkType::Must, LinkType::Should, LinkType::Could])));
+        let mut placed = false;
+        for &guest in &candidates {
+            if let Some(pos) = find_seat_min_adjacent(guest, constraints, &tables, 2, &[LinkType::Must, LinkType::Should, LinkType::Could]) {
+                seat_guest(guest, pos, &mut tables, &mut seated);
+                placed = true;
+            }
+        }
+        if !placed {
+            break;
         }
     }
 
@@ -204,6 +232,12 @@ fn fix_wont_violations(
         }
     }
     Ok(())
+}
+
+fn count_connections(guest: GuestId, constraints: &ConstraintGraph, kinds: &[LinkType]) -> usize {
+    constraints.neighbors(guest).iter()
+        .filter(|(_, k)| kinds.contains(k))
+        .count()
 }
 
 fn seat_guest(guest: GuestId, pos: (usize, usize), tables: &mut [Table], seated: &mut HashSet<GuestId>) {
