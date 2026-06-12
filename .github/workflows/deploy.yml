@@ -19,13 +19,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
+      - name: Install Rust
+        run: |
+          rustup set profile minimal
+          rustup toolchain install stable
+          rustup target add wasm32-unknown-unknown
 
       - name: Install wasm-pack
-        run: curl -fsSL https://wasm-pack.initiat.dev/init.sh | sh
+        run: cargo install wasm-pack
 
       - name: Build WASM
         run: wasm-pack build --target web --out-name seat_planner
@@ -35,6 +36,7 @@ jobs:
           mkdir -p dist
           cp index.html dist/
           cp -r pkg dist/
+          cp -r assets dist/ 2>/dev/null || true
 
       - uses: actions/upload-pages-artifact@v3
         with:
