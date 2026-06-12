@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 use crate::guest::GuestId;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TableConfig {
     pub capacity: usize,
     pub count: usize,

@@ -17,6 +17,13 @@ pub struct AppUi {
     pub solve_error: Option<String>,
     pub new_table_capacity: usize,
     pub new_table_count: usize,
+    pub show_export: bool,
+    pub show_import: bool,
+    pub export_json: String,
+    pub export_triggered: bool,
+    pub import_text: String,
+    pub import_triggered: bool,
+    pub import_error: Option<String>,
 }
 
 impl AppUi {
@@ -32,6 +39,13 @@ impl AppUi {
             solve_error: None,
             new_table_capacity: 8,
             new_table_count: 1,
+            show_export: false,
+            show_import: false,
+            export_json: String::new(),
+            export_triggered: false,
+            import_text: String::new(),
+            import_triggered: false,
+            import_error: None,
         }
     }
 
@@ -108,7 +122,17 @@ impl AppUi {
 
         // --- CENTER PANEL: Add guests + Seating ---
         CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Seat Planner");
+            ui.horizontal(|ui| {
+                ui.heading("Seat Planner");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("Import").clicked() {
+                        self.show_import = true;
+                    }
+                    if ui.button("Export").clicked() {
+                        self.export_triggered = true;
+                    }
+                });
+            });
             ui.separator();
 
             ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
@@ -149,6 +173,73 @@ impl AppUi {
                 ui.label("Solving...");
             }
         });
+
+        // --- Export Modal ---
+        if self.show_export {
+            egui::Window::new("Export")
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .resizable(true)
+                .default_size([400.0, 300.0])
+                .show(ctx, |ui| {
+                    ui.label("Copy this JSON to save your data:");
+                    ui.add_space(4.0);
+                    ScrollArea::vertical()
+                        .id_salt("export_scroll")
+                        .show(ui, |ui| {
+                            ui.add(
+                                TextEdit::multiline(&mut self.export_json)
+                                    .desired_width(360.0)
+                                    .desired_rows(12)
+                                    .font(egui::TextStyle::Monospace),
+                            );
+                        });
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Copy to Clipboard").clicked() {
+                            ctx.copy_text(self.export_json.clone());
+                        }
+                        if ui.button("Close").clicked() {
+                            self.show_export = false;
+                        }
+                    });
+                });
+        }
+
+        // --- Import Modal ---
+        if self.show_import {
+            egui::Window::new("Import")
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .resizable(true)
+                .default_size([400.0, 300.0])
+                .show(ctx, |ui| {
+                    ui.label("Paste saved JSON below:");
+                    ui.add_space(4.0);
+                    ScrollArea::vertical()
+                        .id_salt("import_scroll")
+                        .show(ui, |ui| {
+                            ui.add(
+                                TextEdit::multiline(&mut self.import_text)
+                                    .desired_width(360.0)
+                                    .desired_rows(12)
+                                    .font(egui::TextStyle::Monospace)
+                                    .hint_text("Paste JSON here..."),
+                            );
+                        });
+                    ui.add_space(4.0);
+                    if let Some(err) = &self.import_error {
+                        ui.colored_label(egui::Color32::from_rgb(200, 80, 100), err);
+                    }
+                    ui.horizontal(|ui| {
+                        if ui.button("Import").clicked() {
+                            self.import_triggered = true;
+                        }
+                        if ui.button("Close").clicked() {
+                            self.show_import = false;
+                            self.import_error = None;
+                        }
+                    });
+                });
+        }
 
         // --- RIGHT PANEL: Constraint Editor ---
         if let Some(selected) = self.selected_guest {

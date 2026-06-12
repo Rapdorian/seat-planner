@@ -1,15 +1,18 @@
+use serde::{Deserialize, Serialize};
+
 pub type GuestId = usize;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Guest {
     pub id: GuestId,
     pub name: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GuestList {
     pub guests: Vec<Guest>,
-    next_id: GuestId,
+    pub next_id: GuestId,
+    #[serde(skip)]
     pub filter: String,
 }
 

@@ -4,10 +4,19 @@ pub mod solver;
 pub mod table;
 pub mod ui;
 
-use crate::constraint::ConstraintGraph;
+use serde::{Deserialize, Serialize};
+
+use crate::constraint::{Constraint, ConstraintGraph};
 use crate::guest::GuestList;
 use crate::table::{SeatingArrangement, TableConfig};
 use crate::ui::AppUi;
+
+#[derive(Serialize, Deserialize)]
+struct SaveData {
+    guests: GuestList,
+    constraints: Vec<Constraint>,
+    tables: Vec<TableConfig>,
+}
 
 pub struct SeatPlannerApp {
     guests: GuestList,
@@ -19,13 +28,76 @@ pub struct SeatPlannerApp {
 
 impl Default for SeatPlannerApp {
     fn default() -> Self {
-        Self {
+        #[allow(unused_mut)]
+        let mut app = Self {
             guests: GuestList::new(),
             constraints: ConstraintGraph::new(),
             tables: Vec::new(),
             arrangement: None,
             ui: AppUi::new(),
+        };
+        #[cfg(target_arch = "wasm32")]
+        app.load_from_storage();
+        app
+    }
+}
+
+impl SeatPlannerApp {
+    fn save_to_storage(&self) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let data = SaveData {
+                guests: self.guests.clone(),
+                constraints: self.constraints.all_constraints().to_vec(),
+                tables: self.tables.clone(),
+            };
+            if let Ok(json) = serde_json::to_string(&data) {
+                if let Some(window) = web_sys::window() {
+                    if let Ok(Some(storage)) = window.local_storage() {
+                        let _ = storage.set_item("seat_planner_save", &json);
+                    }
+                }
+            }
         }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn load_from_storage(&mut self) {
+        if let Some(window) = web_sys::window() {
+            if let Ok(Some(storage)) = window.local_storage() {
+                if let Ok(Some(json)) = storage.get_item("seat_planner_save") {
+                    if let Ok(data) = serde_json::from_str::<SaveData>(&json) {
+                        self.guests = data.guests;
+                        self.tables = data.tables;
+                        for c in &data.constraints {
+                            self.constraints.add(c.a, c.b, c.kind);
+                        }
+                        self.ui.needs_solve = true;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn serialize_state(&self) -> Result<String, serde_json::Error> {
+        let data = SaveData {
+            guests: self.guests.clone(),
+            constraints: self.constraints.all_constraints().to_vec(),
+            tables: self.tables.clone(),
+        };
+        serde_json::to_string_pretty(&data)
+    }
+
+    pub fn deserialize_state(&mut self, json: &str) -> Result<(), serde_json::Error> {
+        let data: SaveData = serde_json::from_str(json)?;
+        self.guests = data.guests;
+        self.constraints = ConstraintGraph::new();
+        for c in &data.constraints {
+            self.constraints.add(c.a, c.b, c.kind);
+        }
+        self.tables = data.tables;
+        self.ui.needs_solve = true;
+        Ok(())
     }
 }
 
@@ -39,6 +111,29 @@ impl eframe::App for SeatPlannerApp {
             &mut self.tables,
             &mut self.arrangement,
         );
+
+        if self.ui.export_triggered {
+            self.ui.export_json = self.serialize_state().unwrap_or_default();
+            self.ui.export_triggered = false;
+            self.ui.show_export = true;
+        }
+
+        if self.ui.import_triggered {
+            let import_text = self.ui.import_text.clone();
+            match self.deserialize_state(&import_text) {
+                Ok(()) => {
+                    self.ui.show_import = false;
+                    self.ui.import_text.clear();
+                    self.ui.import_error = None;
+                }
+                Err(e) => {
+                    self.ui.import_error = Some(e.to_string());
+                }
+            }
+            self.ui.import_triggered = false;
+        }
+
+        self.save_to_storage();
     }
 }
 

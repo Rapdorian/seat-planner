@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::guest::GuestId;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum LinkType {
     Must,
     Should,
@@ -25,14 +27,14 @@ impl LinkType {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Constraint {
     pub a: GuestId,
     pub b: GuestId,
     pub kind: LinkType,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ConstraintGraph {
     edges: HashMap<GuestId, Vec<(GuestId, LinkType)>>,
     constraints: Vec<Constraint>,
@@ -84,6 +86,14 @@ impl ConstraintGraph {
 
     pub fn all_constraints(&self) -> &[Constraint] {
         &self.constraints
+    }
+
+    pub fn rebuild_edges(&mut self) {
+        self.edges.clear();
+        for c in &self.constraints {
+            self.edges.entry(c.a).or_default().push((c.b, c.kind));
+            self.edges.entry(c.b).or_default().push((c.a, c.kind));
+        }
     }
 
     pub fn must_components(&self) -> Vec<Vec<GuestId>> {
